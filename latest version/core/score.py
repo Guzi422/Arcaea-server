@@ -355,6 +355,7 @@ class UserPlay(UserScore):
         self.beyond_boost_gauge_usage = int(beyond_boost_gauge_usage)
         self.skill_cytusii_flag = skill_cytusii_flag
         self.skill_chinatsu_flag = skill_chinatsu_flag
+        self.invasion_flag = 0
         if self.prog_boost_multiply != 0 or self.beyond_boost_gauge_usage != 0:
             self.c.execute('''select prog_boost, beyond_boost_gauge from user where user_id=:a''', {
                            'a': self.user.user_id})
@@ -369,30 +370,33 @@ class UserPlay(UserScore):
         self.user.current_map.select_map_info()
 
         self.user.select_user_about_stamina()
-        if self.user.stamina.stamina < self.user.current_map.stamina_cost * self.stamina_multiply:
+        stamina_reduce = self.user.current_map.stamina_cost * self.stamina_multiply
+        if self.user.stamina.stamina < stamina_reduce:
             raise StaminaNotEnough('Stamina is not enough.')
 
         self.user.select_user_about_character()
         if not self.user.is_skill_sealed:
             self.user.character.select_character_info()
-            # invasion 扔骰子
-            _flag = choices([0, 1, 2], [
-                            max(1 - Constant.INVASION_START_WEIGHT - Constant.INVASION_HARD_WEIGHT, 0), Constant.INVASION_START_WEIGHT, Constant.INVASION_HARD_WEIGHT])[0]
-            if self.user.is_insight_enabled and _flag != 0:
-                self.invasion_flag = _flag
+            if self.user.is_insight_enabled and self.user.character.skill_id_displayed != 'skill_intruder':
+                # invasion 扔骰子
+                self.invasion_flag = \
+                    choices([0, 1, 2], [
+                        max(1 - Constant.INVASION_START_WEIGHT - Constant.INVASION_HARD_WEIGHT, 0),
+                        Constant.INVASION_START_WEIGHT,
+                        Constant.INVASION_HARD_WEIGHT
+                    ])[0]
 
-            elif self.user.character.skill_id_displayed == 'skill_fatalis':
+            if self.invasion_flag != 1 and self.user.character.skill_id_displayed == 'skill_fatalis':
                 # 特殊判断hikari fatalis的双倍体力消耗
-                self.user.stamina.stamina -= self.user.current_map.stamina_cost * \
-                    self.stamina_multiply * 2
-                self.user.stamina.update()
-                return None
+                stamina_reduce *= 2
 
         self.clear_play_state()
         self.c.execute('''insert into songplay_token values(:t,:a,:b,:c,'',-1,0,0,:d,:e,:f,:g,:h,:i,:j)''', {
-            'a': self.user.user_id, 'b': self.song.song_id, 'c': self.song.difficulty, 'd': self.stamina_multiply, 'e': self.fragment_multiply, 'f': self.prog_boost_multiply, 'g': self.beyond_boost_gauge_usage, 'h': self.skill_cytusii_flag, 'i': self.skill_chinatsu_flag, 'j': self.invasion_flag, 't': self.song_token})
+            'a': self.user.user_id, 'b': self.song.song_id, 'c': self.song.difficulty,
+            'd': self.stamina_multiply, 'e': self.fragment_multiply, 'f': self.prog_boost_multiply, 'g': self.beyond_boost_gauge_usage,
+            'h': self.skill_cytusii_flag, 'i': self.skill_chinatsu_flag, 'j': self.invasion_flag, 't': self.song_token})
 
-        self.user.stamina.stamina -= self.user.current_map.stamina_cost * self.stamina_multiply
+        self.user.stamina.stamina -= stamina_reduce
         self.user.stamina.update()
 
     def set_play_state_for_course(self, use_course_skip_purchase: bool, course_id: str = None) -> None:
